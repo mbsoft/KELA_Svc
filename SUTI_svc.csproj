@@ -80,10 +80,7 @@
       <Name>log4net</Name>
       <HintPath>..\IlinkBridge\bin\Debug\log4net.dll</HintPath>
     </Reference>
-    <Reference Include="Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\Json60r8\Bin\Net35\Newtonsoft.Json.dll</HintPath>
-    </Reference>
+    <Reference Include="Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL" />
     <Reference Include="PI_Data">
       <Name>PI_Data</Name>
       <HintPath>..\PI_Lib\bin\Debug\PI_Data.dll</HintPath>
