@@ -81,14 +81,7 @@
       <HintPath>..\IlinkBridge\bin\Debug\log4net.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL" />
-    <Reference Include="PI_Data">
-      <Name>PI_Data</Name>
-      <HintPath>..\PI_Lib\bin\Debug\PI_Data.dll</HintPath>
-    </Reference>
-    <Reference Include="PI_Lib">
-      <Name>PI_Lib</Name>
-      <HintPath>..\PI_Lib\bin\Debug\PI_Lib.dll</HintPath>
-    </Reference>
+    <Reference Include="PI_Data, Version=1.0.4111.22069, Culture=neutral" />
     <Reference Include="System">
       <Name>System</Name>
     </Reference>
@@ -248,6 +241,12 @@
       <CachedAppSettingsObjectName>Settings</CachedAppSettingsObjectName>
       <CachedSettingsPropName>SUTI_svc_localhost_SutiService</CachedSettingsPropName>
     </WebReferenceUrl>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PI_Lib\PI_Lib.csproj">
+      <Project>{A9F85E93-F95F-4CAA-A01E-402D545BD563}</Project>
+      <Name>PI_Lib</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>

@@ -95,6 +95,156 @@ namespace SUTI_svc
             return aFullKelaId;        
         }
 
+        public void UpdateKelaOrderDB(SUTI from, SUTIMsg msgFrom, string msgID, int tpakCallNbr)
+        {
+            inSUTI = from;
+            inSUTImsg = msgFrom;
+            sID = msgID;
+
+            OdbcConnection connIfx = new OdbcConnection(ConfigurationSettings.AppSettings.Get("MadsODBC"));
+            try
+            {
+                connIfx.Open();
+
+                // delete all prior nodes
+                OdbcCommand myCommand = new OdbcCommand("delete from kela_node where tpak_id=" + tpakCallNbr, connIfx);
+                myCommand.ExecuteNonQuery();
+                
+                SUTI_svc.order theOrder = ((SUTI_svc.order)msgFrom.Item);
+
+                List<routeNode> rteList = theOrder.route;
+                String passenger = "";
+                String datetime = String.Empty;
+                String phonenbr = String.Empty;
+                String booking_id = String.Empty;
+                String short_booking_id = String.Empty;
+                String last_booking_id = String.Empty;
+                String manual_text = String.Empty;
+                int sequence_nbr = 1;
+
+                foreach (var rte in rteList)
+                {
+
+                    List<content> nodeContent = rte.contents;
+
+                    if (nodeContent.Count > 0)
+                    {
+                        passenger = nodeContent[0].name;  //taking the first listed passenger
+                        contentIdContent bdayContent = nodeContent[0].idContent;
+                        if (bdayContent.id.Length >= 6)
+                        {
+                            if (Int16.Parse(bdayContent.id.Substring(4, 2)) <= 15)
+                                passenger = passenger + "/20" + bdayContent.id.Substring(4, 2);
+                            else
+                                passenger = passenger + "/19" + bdayContent.id.Substring(4, 2);
+                        }
+
+
+                        List<contactInfo> contactContent = nodeContent[0].contactInfosContent;
+                        if (contactContent.Count > 0)
+                            phonenbr = contactContent[0].contactInfo1;
+
+                        List<idType> subOrderContent = nodeContent[0].subOrderContent;
+                        foreach (var idOrder in subOrderContent)
+                        {
+                            if (idOrder.src.Equals("KELA_TRIP_ID")) //this is booking_ID
+                            {
+                                //shorten to 6 chars according to Kela shortening algo
+                                booking_id = idOrder.id;
+
+                                short_booking_id = Kela_IsKelaIdOk(booking_id);
+                            }
+                        }
+                        List<manualDescriptionType> mda1 = nodeContent[0].manualDescriptionContent;
+                        if (mda1.Count > 0)
+                            manual_text = mda1[0].manualText;
+                    }
+
+                    List<timesTypeTime> timeContent = rte.timesNode;
+
+                    //double UnixTime = 0;
+                    int nodeSeqno = Int16.Parse(rte.nodeSeqno);
+                    if (timeContent.Count > 0)
+                    {
+                        datetime = timeContent[0].time1.ToString("yyyy-MM-ddTHH:mm:ss");
+                        if (nodeSeqno == 1)
+                        {
+                            double nowtime = (DateTime.Now - new DateTime(1970, 1, 1).ToLocalTime()).TotalSeconds;
+                            _UnixTime = (timeContent[0].time1.ToLocalTime() - new DateTime(1970, 1, 1).ToLocalTime()).TotalSeconds - 7200;
+                        }
+                    }
+
+
+                    if (rte.addressNode.streetNo == null)
+                        rte.addressNode.streetNo = "0";
+
+                    List<manualDescriptionType> mda = rte.addressNode.manualDescriptionAddress;
+                    if (mda.Count > 0)
+                        manual_text += " " + mda[0].manualText;
+
+
+                    try
+                    {
+                        using (OdbcCommand ct = connIfx.CreateCommand())
+                        {
+                            ct.CommandType = CommandType.Text;
+
+                            ct.CommandText = String.Format(new System.Globalization.CultureInfo("en-US"), "insert into kela_node values ('{0}',{1},{2},'{3}','{4}', {5}, '{6}', '{7}', '{8}', '{9}', '{10}', {11}, {12},'{13}','{14}','{15}','{16}','{17}','{18}')",
+                                theOrder.idOrder.id,
+                                nodeSeqno,
+                                tpakCallNbr,
+                                (rte.nodeType.ToString() == "pickup" ? "P" : "D"),
+                                rte.addressNode.street.Replace("'", "''"),
+                                Int32.Parse(rte.addressNode.streetNo),
+                                rte.addressNode.streetNoLetter,
+                                rte.addressNode.community,
+                                datetime,
+                                (passenger.Length > 0 ? passenger : ""),
+                                (phonenbr.Length > 0 ? phonenbr : ""),
+                                rte.addressNode.geographicLocation.lat,
+                                rte.addressNode.geographicLocation.@long,
+                                "",
+                                "",
+                                "",
+                                short_booking_id, booking_id, manual_text
+                                );
+
+                            log.InfoFormat(ct.CommandText);
+                            ct.ExecuteNonQuery();
+                            //connIfx.Close();
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        using (OdbcCommand ct = connIfx.CreateCommand())
+                        {
+                            ct.CommandType = CommandType.Text;
+                            ct.CommandText = String.Format(new System.Globalization.CultureInfo("en-US"),
+                                "update kela_node set tpak_id='" + tpakCallNbr.ToString() + "' where rte_id='" +
+                                theOrder.idOrder.id + "'");
+                            ct.ExecuteNonQuery();
+                            //connIfx.Close();
+                        }
+                    }
+                    //}
+
+
+                }
+
+                connIfx.Close();
+
+            }
+            catch (Exception exc)
+            {
+                log.Error(String.Format("Error ]inserting Informix database (reattempt as UPDATE): {0}", exc.Message));
+                // Try UPDATE instead
+
+
+            }
+            return;
+
+        }
+
         public void LoadKelaOrderDB(SUTI from, SUTIMsg msgFrom, string msgID, int tpakCallNbr)
         {
             inSUTI = from;

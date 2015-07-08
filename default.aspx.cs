@@ -286,13 +286,13 @@ namespace SUTI_svc
                             OdbcDataReader myReader = myCommand.ExecuteReader();
                             try
                             {
-                                if (myReader.Read())  // route exists....reject!!
+                                if (myReader.Read())  // route exists
                                 {
-                                    // SEND ORDER REJECT 2002
-                                    OrderKELAReject or = new OrderKELAReject(rteID, "0000", smsg,
-                                        Int32.Parse(Application["msgCount"].ToString()));
-                                    Application["msgCount"] = Convert.ToInt32(Application["msgCount"]) + 1;
-                                    or.ReplyOrderCancel();
+                                    // July 2015 - start supporting UPDATE operations
+                                    int tpak_id = 0;
+                                    tpak_id = myReader.GetInt32(2);
+                                    UpdateOrderHandler(theOrder, myOrderKELA, smsg, theMsg, tpak_id);
+
                                     myReader.Close();
                                     connIfx.Close();
                                     Response.Filter = new HDIResponseFilter(Response.Filter);
@@ -304,6 +304,7 @@ namespace SUTI_svc
                             }
                             catch (Exception exc)
                             {
+                                System.Diagnostics.Debug.WriteLine(exc.Message);
                                 connIfx.Close(); 
                             }
 
@@ -311,196 +312,10 @@ namespace SUTI_svc
                         catch (Exception exc)
                         {
                             System.Diagnostics.Debug.WriteLine(exc.Message);
-                        } 
-
-                        
-
-                        //Check whether order has been sent previously...reject if it has
-
-                        PI_DISPATCH_CALL myCall = new PI_DISPATCH_CALL();
-                        myCall.call_type = ConfigurationSettings.AppSettings["CallType"].ToCharArray();
-                        myCall.fleet = Convert.ToChar(ConfigurationSettings.AppSettings["FleetID"]);
-                        myCall.priority = Convert.ToInt16("25");
-                        myCall.number_of_calls = Convert.ToChar("1");
-
-                        List<routeNode> rteList = theOrder.route;
-                        resourceType ro = theOrder.resourceOrder;
-                        if (ro.vehicle != null)
-                        {
-                            List<attribute> attrList = ro.vehicle.attributesVehicle;
-                            string veh_attr = ConfigurationSettings.AppSettings["Vehicle_Attr"];
-                            string drv_attr = ConfigurationSettings.AppSettings["Driver_Attr"];
-
-                            if (attrList.Count > 0)
-                            {
-                                foreach (var idAttr in attrList)
-                                {
-                                    if (idAttr.idAttribute.id.Equals("1618"))  //EB
-                                    {
-                                        veh_attr = "EEEEEEEKEEEEEEEEEEEEEEEEEKEEKEEE";
-                                    }
-                                    else if (idAttr.idAttribute.id.Equals("1601"))  //EB,FA
-                                    {
-                                        veh_attr = "EEEKEEEKEEEEEEEEEEEEEEEEEKEEKEEE";
-                                    }
-                                    else if (idAttr.idAttribute.id.Equals("1619"))  //8H
-                                    {
-                                        veh_attr = "EKEEEEEEEEEEEEEEEEEEEEEEEKEEKEEE";
-                                    }
-                                    else if (idAttr.idAttribute.id.Equals("1614"))  //IN
-                                    {
-                                        veh_attr = "EEEEEEEEEEEEEEEEEEEEEEEEEKEEKEKE";
-                                    }
-                                    else if (idAttr.idAttribute.id.Equals("1615"))  //IN
-                                    {
-                                        veh_attr = "EEEEEEEEEEEEEEEEEEEEEEEEEKEEKEKE";
-                                    }
-                                    else if (idAttr.idAttribute.id.Equals("1613"))  //PA-19
-                                    {
-                                        veh_attr = "EEEEEEEEEEEEEEEEEEKEEEEEEKEEKEEE";
-                                    }
-                                    else if (idAttr.idAttribute.id.Equals("1640")) // PT (28)
-                                    {
-                                        veh_attr = "EEEEEEEEEEEEEEEEEEEEEEEEEKEKKEEE";
-                                    }
-
-                                }
-                            }
-                            
-                            capacity cap = ro.vehicle.capacity;
-                            if (cap != null) 
-                            {
-                                if (cap.seats != null)
-                                {
-                                    int nbrSeats = Int16.Parse(cap.seats.noOfSeats);
-                                    if (nbrSeats == 4 || nbrSeats == 5)
-                                        veh_attr = "K" + veh_attr.Substring(1, 31);
-                                    else if (nbrSeats > 5)
-                                        veh_attr = "EK" + veh_attr.Substring(2, 30);
-                                }
-                            }
-                            myCall.car_attrib = veh_attr.ToCharArray();
-                            myCall.driver_attrib = drv_attr.ToCharArray();
-                            myCall.car_number = Convert.ToInt16(ro.vehicle.idVehicle.id);
                         }
 
-                        int pickupCount = 0;
-                        int totalCount = 0;
-                        int orderCount = 0;
-                        Dictionary<int, string> sm = new Dictionary<int, string>();
-                        foreach (var rte in rteList)
-                        {
-                            totalCount++;
-                            System.Diagnostics.Debug.WriteLine(rte.addressNode.street);
-                            List<idType> subOrderContent = rte.contents[0].subOrderContent;
-                            foreach (var idOrder in subOrderContent)
-                            {
-                                if (idOrder.src.Equals("KELA_TRIP_ID")) //this is booking_ID
-                                {
-                                    if (!sm.ContainsValue(idOrder.id))
-                                    {
-                                        ++orderCount;
-                                        sm.Add(orderCount, idOrder.id);
-                                    }
-                                }
-                            }
-                            // Translation table for 'community'
-                            rte.addressNode.community = CityTranslate(rte.addressNode.community.ToUpper());
+                        NewOrderHandler(theOrder, myOrderKELA, smsg, theMsg);
 
-                            if (rte.nodeType == nodeNodeType.pickup && pickupCount == 0)
-                            {
-                                ++pickupCount;
-                                if (rte.addressNode.community.Length < 3)
-                                {
-                                    // attempt to get city from Nominatim server
-                                    //String nomcity = NomCity(rte.addressNode.geographicLocation.@long.ToString(),
-                                    //    rte.addressNode.geographicLocation.lat.ToString());
-                                    //nomcity = CityTranslate(nomcity.ToUpper());
-                                    //myCall.from_addr_city = nomcity.ToCharArray();
-                                    myCall.from_addr_city = "   ".ToCharArray();
-                                }
-                                else
-                                    myCall.from_addr_city = rte.addressNode.community.ToCharArray();
-                                myCall.from_addr_street = rte.addressNode.street.ToUpper().ToCharArray();
-                                myCall.from_addr_number = Convert.ToInt32(rte.addressNode.streetNo);
-                                // time call or immediate call?
-                                List<timesTypeTime> timesList = rte.timesNode;
-                                if (timesList.Count > 0)
-                                {
-                                    myCall.due_date = String.Format("{0}", timesList[0].time1.ToString("ddMMyy")).ToCharArray();
-                                    myCall.due_time = String.Format("{0}", timesList[0].time1.ToString("HHmm")).ToCharArray();
-                                }
-                                // get coordinates and convert...
-                                //LLUtm llconverter = new LLUtm();
-                                //double utm_east = 0.0;
-                                //double utm_north = 0.0;
-                                //string utm_zone = "";
-                                //llconverter.LLtoUTM(rte.addressNode.geographicLocation.lat,
-                                //    rte.addressNode.geographicLocation.@long, out utm_east, out utm_north, out utm_zone);
-                                myCall.gpsx = rte.addressNode.geographicLocation.@long.ToString().ToCharArray();
-                                myCall.gpsy = rte.addressNode.geographicLocation.lat.ToString().ToCharArray();
-                            }
-                            else if (rte.nodeType == nodeNodeType.destination)
-                            {
-                                if (rte.addressNode.community.Length < 3)
-                                    myCall.to_addr_city = "   ".ToCharArray();
-                                else
-                                    myCall.to_addr_city = rte.addressNode.community.ToCharArray();
-                                myCall.to_addr_street = rte.addressNode.street.ToUpper().ToCharArray();
-                                myCall.to_addr_number = Convert.ToInt32(rte.addressNode.streetNo);
-                            }
-                        }
-                        if (totalCount > 0)
-                            myCall.to_addr_street = ("1/" + totalCount.ToString()).ToCharArray();
-
-                        // Send to PI handler
-                        // Then acknowledge receipt
-                        try
-                        {
-                            myPISocket = new PI_Lib.PIClient();
-                            log.InfoFormat("<-- Successful PI socket connection");
-                        }
-                        catch (System.Net.Sockets.SocketException ex)
-                        {
-                            log.InfoFormat("Error on PI socket ({0})", ex.Message);
-                            return;
-                        }
-                        myPISocket.SetType(MessageTypes.PI_DISPATCH_CALL);
-                        myPISocket.sendBuf = myCall.ToByteArray();
-
-                        try
-                        {
-                            log.InfoFormat("<-- Starting PI Socket SEND");
-                            //System.Threading.Thread.Sleep(30000);
-                            myPISocket.SendMessage();
-                            log.InfoFormat("<-- Done with PI Socket SEND");
-                            log.InfoFormat("<-- Starting PI Socket RECV");
-                            myPISocket.ReceiveMessage();
-                            log.InfoFormat("<-- Done with PI Socket RECV");
-
-                            myCall.Deserialize(myPISocket.recvBuf);
-                            myPISocket.CloseMe();
-                            log.InfoFormat("<-- success send PI socket");
-                        }
-                        catch (Exception exc)
-                        {
-                            log.InfoFormat("<--- error on PI socket send " + exc.Message);
-                            return;
-                        }
-
-                        myOrderKELA.LoadKelaOrderDB(smsg, theMsg, theMsg.idMsg.id, myCall.call_number);
-                        myOrderKELA.CallNbr = myCall.call_number.ToString();
-                        lock (Global.lockObject)
-                        {
-
-                            SUTI_svc.order od = ((SUTI_svc.order)theMsg.Item);
-                            OrderMonitor om = new OrderMonitor(smsg, myOrderKELA.CallNbr, od.idOrder.id);
-                            om.due_date_time = myOrderKELA._UnixTime;
-                            //log.InfoFormat("OrderMonitor created: {0} - {1}", myOrderKELA.CallNbr, myCall.call_number);
-                            Global.CallHashTable.Add(om, myOrderKELA.CallNbr);
-                        }
-
-                        log.InfoFormat("*** Call {0} ***", myOrderKELA.CallNbr);
                         //Response.Write(myCall.call_number.ToString());
                         Response.Filter = new HDIResponseFilter(Response.Filter);
 
@@ -773,6 +588,391 @@ namespace SUTI_svc
             Session.Clear();
             Session.Abandon();
 
+        }
+
+        private void UpdateOrderHandler(order theOrder, OrderKELA myOrderKELA, SUTI smsg, SUTIMsg theMsg, int tpak_id)
+        {
+            String rteID = theOrder.idOrder.id;
+
+            // Check whether order is still open. If not, send order reject 2002 message
+            OdbcConnection connIfx = new OdbcConnection(ConfigurationSettings.AppSettings.Get("MadsODBC"));
+            try
+            {
+                connIfx.Open();
+                OdbcCommand myCommand = new OdbcCommand("select cl_status from calls where cl_nbr=" + tpak_id, connIfx);
+                OdbcDataReader myReader = myCommand.ExecuteReader();
+                try
+                {
+                    if (myReader.Read())
+                    {
+                        if (myReader.GetString(0).Trim().Equals("PERUTTU") || myReader.GetString(0).Trim().Equals("VALMIS"))
+                        {
+                            // SEND ORDER REJECT 2002
+                            OrderKELAReject or = new OrderKELAReject(rteID, "0000", smsg,
+                                Int32.Parse(Application["msgCount"].ToString()));
+                            Application["msgCount"] = Convert.ToInt32(Application["msgCount"]) + 1;
+                            or.ReplyOrderCancel();
+                        }
+                        else // update the DB (calls and kela_node)
+                        {
+                            List<routeNode> rteList = theOrder.route;
+                            resourceType ro = theOrder.resourceOrder;
+                            string from_addr_city = String.Empty;
+                            string to_addr_city = String.Empty;
+                            string from_addr_street = String.Empty;
+                            string to_addr_street = String.Empty;
+                            Int32 from_addr_number = 0;
+                            Int32 to_addr_number = 0;
+                            string due_date = String.Empty;
+                            string due_time = String.Empty;
+                            string gpsx = String.Empty, gpsy = String.Empty;
+                            if (ro.vehicle != null)
+                            {
+                                List<attribute> attrList = ro.vehicle.attributesVehicle;
+                                string veh_attr = ConfigurationSettings.AppSettings["Vehicle_Attr"];
+                                string drv_attr = ConfigurationSettings.AppSettings["Driver_Attr"];
+
+                                if (attrList.Count > 0)
+                                {
+                                    foreach (var idAttr in attrList)
+                                    {
+                                        if (idAttr.idAttribute.id.Equals("1618"))  //EB
+                                        {
+                                            veh_attr = "EEEEEEEKEEEEEEEEEEEEEEEEEKEEKEEE";
+                                        }
+                                        else if (idAttr.idAttribute.id.Equals("1601"))  //EB,FA
+                                        {
+                                            veh_attr = "EEEKEEEKEEEEEEEEEEEEEEEEEKEEKEEE";
+                                        }
+                                        else if (idAttr.idAttribute.id.Equals("1619"))  //8H
+                                        {
+                                            veh_attr = "EKEEEEEEEEEEEEEEEEEEEEEEEKEEKEEE";
+                                        }
+                                        else if (idAttr.idAttribute.id.Equals("1614"))  //IN
+                                        {
+                                            veh_attr = "EEEEEEEEEEEEEEEEEEEEEEEEEKEEKEKE";
+                                        }
+                                        else if (idAttr.idAttribute.id.Equals("1615"))  //IN
+                                        {
+                                            veh_attr = "EEEEEEEEEEEEEEEEEEEEEEEEEKEEKEKE";
+                                        }
+                                        else if (idAttr.idAttribute.id.Equals("1613"))  //PA-19
+                                        {
+                                            veh_attr = "EEEEEEEEEEEEEEEEEEKEEEEEEKEEKEEE";
+                                        }
+                                        else if (idAttr.idAttribute.id.Equals("1640")) // PT (28)
+                                        {
+                                            veh_attr = "EEEEEEEEEEEEEEEEEEEEEEEEEKEKKEEE";
+                                        }
+
+                                    }
+                                }
+                                capacity cap = ro.vehicle.capacity;
+                                if (cap != null)
+                                {
+                                    if (cap.seats != null)
+                                    {
+                                        int nbrSeats = Int16.Parse(cap.seats.noOfSeats);
+                                        if (nbrSeats == 4 || nbrSeats == 5)
+                                            veh_attr = "K" + veh_attr.Substring(1, 31);
+                                        else if (nbrSeats > 5)
+                                            veh_attr = "EK" + veh_attr.Substring(2, 30);
+                                    }
+                                }
+                            }
+                            int pickupCount = 0;
+                            int totalCount = 0;
+                            int orderCount = 0;
+                            Dictionary<int, string> sm = new Dictionary<int, string>();
+                            foreach (var rte in rteList)
+                            {
+                                totalCount++;
+                                List<idType> subOrderContent = rte.contents[0].subOrderContent;
+                                foreach (var idOrder in subOrderContent)
+                                {
+                                    if (idOrder.src.Equals("KELA_TRIP_ID"))
+                                    {
+                                        if (!sm.ContainsValue(idOrder.id))
+                                        {
+                                            ++orderCount;
+                                            sm.Add(orderCount, idOrder.id);
+                                        }
+                                    }
+                                }
+                                rte.addressNode.community = CityTranslate(rte.addressNode.community.ToUpper());
+                                if (rte.nodeType == nodeNodeType.pickup && pickupCount == 0)
+                                {
+                                    ++pickupCount;
+                                    if (rte.addressNode.community.Length < 3)
+                                    {
+                                        from_addr_city = "   ";
+                                    }
+                                    else
+                                        from_addr_city = rte.addressNode.community;
+                                    from_addr_street = rte.addressNode.street.ToUpper();
+                                    from_addr_number = Convert.ToInt32(rte.addressNode.streetNo);
+                                    List<timesTypeTime> timesList = rte.timesNode;
+                                    if (timesList.Count > 0)
+                                    {
+                                        due_date = String.Format("{0}", timesList[0].time1.ToString("ddMMyy"));
+                                        due_time = String.Format("{0}", timesList[0].time1.ToString("HHmm"));
+                                    }
+                                    gpsx = rte.addressNode.geographicLocation.@long.ToString();
+                                    gpsy = rte.addressNode.geographicLocation.lat.ToString();
+                                }
+                                else if (rte.nodeType == nodeNodeType.destination)
+                                {
+                                    if (rte.addressNode.community.Length < 3)
+                                        to_addr_city = "   ";
+                                    else
+                                        to_addr_city = rte.addressNode.community;
+                                    to_addr_street = rte.addressNode.street.ToUpper();
+                                    to_addr_number = Convert.ToInt32(rte.addressNode.streetNo);
+                                }
+
+                            }
+                            if (totalCount > 0)
+                                to_addr_street = "1/" + totalCount.ToString();
+
+                            // Update kela nodes
+                            myOrderKELA.UpdateKelaOrderDB(smsg, theMsg, theMsg.idMsg.id, tpak_id);
+                           
+                            // db update CALLS record
+                            PI_UPDATE_CALL updateCall = new PI_UPDATE_CALL();
+                            PIClient newPISocket;
+                            try
+                            {
+                                newPISocket = new PI_Lib.PIClient();
+                            }
+                            catch (System.Net.Sockets.SocketException ex)
+                            {
+                                log.InfoFormat("error on PI socket {0}", ex.Message);
+                                return;
+                            }
+                            newPISocket.SetType(MessageTypes.PI_UPDATE_CALL);
+                            updateCall.call_number = tpak_id.ToString().ToCharArray();
+                            updateCall.from_addr_city = from_addr_city.ToCharArray();
+                            updateCall.from_addr_street = from_addr_street.ToCharArray();
+                            updateCall.from_addr_number = from_addr_number.ToString().ToCharArray();
+                            updateCall.due_date = due_date.ToCharArray();
+                            updateCall.due_time = due_time.ToCharArray();
+                            updateCall.fleet = 'H';
+                            newPISocket.sendBuf = updateCall.ToByteArray();
+                            try
+                            {
+                                newPISocket.SendMessage();
+                                newPISocket.ReceiveMessage();
+                                newPISocket.CloseMe();
+
+                            }
+                            catch (Exception exc)
+                            {
+                                log.InfoFormat("<--- error on PI socket send " + exc.Message);
+                                return;
+                            }
+                            
+
+                        }
+                    }
+                    myReader.Close();
+                    connIfx.Close();
+                }
+                catch (Exception exc)
+                {
+                    System.Diagnostics.Debug.WriteLine(exc.Message);
+                    connIfx.Close(); 
+                }
+                    
+            }
+            catch (Exception exc)
+            {
+                System.Diagnostics.Debug.WriteLine(exc.Message);
+                connIfx.Close(); 
+            }
+            connIfx.Close(); 
+
+        }
+
+        private void NewOrderHandler(order theOrder, OrderKELA myOrderKELA, SUTI smsg, SUTIMsg theMsg)
+        {
+            PI_DISPATCH_CALL myCall = new PI_DISPATCH_CALL();
+            myCall.call_type = ConfigurationSettings.AppSettings["CallType"].ToCharArray();
+            myCall.fleet = Convert.ToChar(ConfigurationSettings.AppSettings["FleetID"]);
+            myCall.priority = Convert.ToInt16("25");
+            myCall.number_of_calls = Convert.ToChar("1");
+
+            List<routeNode> rteList = theOrder.route;
+            resourceType ro = theOrder.resourceOrder;
+            if (ro.vehicle != null)
+            {
+                List<attribute> attrList = ro.vehicle.attributesVehicle;
+                string veh_attr = ConfigurationSettings.AppSettings["Vehicle_Attr"];
+                string drv_attr = ConfigurationSettings.AppSettings["Driver_Attr"];
+
+                if (attrList.Count > 0)
+                {
+                    foreach (var idAttr in attrList)
+                    {
+                        if (idAttr.idAttribute.id.Equals("1618"))  //EB
+                        {
+                            veh_attr = "EEEEEEEKEEEEEEEEEEEEEEEEEKEEKEEE";
+                        }
+                        else if (idAttr.idAttribute.id.Equals("1601"))  //EB,FA
+                        {
+                            veh_attr = "EEEKEEEKEEEEEEEEEEEEEEEEEKEEKEEE";
+                        }
+                        else if (idAttr.idAttribute.id.Equals("1619"))  //8H
+                        {
+                            veh_attr = "EKEEEEEEEEEEEEEEEEEEEEEEEKEEKEEE";
+                        }
+                        else if (idAttr.idAttribute.id.Equals("1614"))  //IN
+                        {
+                            veh_attr = "EEEEEEEEEEEEEEEEEEEEEEEEEKEEKEKE";
+                        }
+                        else if (idAttr.idAttribute.id.Equals("1615"))  //IN
+                        {
+                            veh_attr = "EEEEEEEEEEEEEEEEEEEEEEEEEKEEKEKE";
+                        }
+                        else if (idAttr.idAttribute.id.Equals("1613"))  //PA-19
+                        {
+                            veh_attr = "EEEEEEEEEEEEEEEEEEKEEEEEEKEEKEEE";
+                        }
+                        else if (idAttr.idAttribute.id.Equals("1640")) // PT (28)
+                        {
+                            veh_attr = "EEEEEEEEEEEEEEEEEEEEEEEEEKEKKEEE";
+                        }
+
+                    }
+                }
+
+                capacity cap = ro.vehicle.capacity;
+                if (cap != null)
+                {
+                    if (cap.seats != null)
+                    {
+                        int nbrSeats = Int16.Parse(cap.seats.noOfSeats);
+                        if (nbrSeats == 4 || nbrSeats == 5)
+                            veh_attr = "K" + veh_attr.Substring(1, 31);
+                        else if (nbrSeats > 5)
+                            veh_attr = "EK" + veh_attr.Substring(2, 30);
+                    }
+                }
+                myCall.car_attrib = veh_attr.ToCharArray();
+                myCall.driver_attrib = drv_attr.ToCharArray();
+                myCall.car_number = Convert.ToInt16(ro.vehicle.idVehicle.id);
+            }
+
+            int pickupCount = 0;
+            int totalCount = 0;
+            int orderCount = 0;
+            Dictionary<int, string> sm = new Dictionary<int, string>();
+            foreach (var rte in rteList)
+            {
+                totalCount++;
+                System.Diagnostics.Debug.WriteLine(rte.addressNode.street);
+                List<idType> subOrderContent = rte.contents[0].subOrderContent;
+                foreach (var idOrder in subOrderContent)
+                {
+                    if (idOrder.src.Equals("KELA_TRIP_ID")) //this is booking_ID
+                    {
+                        if (!sm.ContainsValue(idOrder.id))
+                        {
+                            ++orderCount;
+                            sm.Add(orderCount, idOrder.id);
+                        }
+                    }
+                }
+                // Translation table for 'community'
+                rte.addressNode.community = CityTranslate(rte.addressNode.community.ToUpper());
+
+                if (rte.nodeType == nodeNodeType.pickup && pickupCount == 0)
+                {
+                    ++pickupCount;
+                    if (rte.addressNode.community.Length < 3)
+                    {
+                        // attempt to get city from Nominatim server
+                        //String nomcity = NomCity(rte.addressNode.geographicLocation.@long.ToString(),
+                        //    rte.addressNode.geographicLocation.lat.ToString());
+                        //nomcity = CityTranslate(nomcity.ToUpper());
+                        //myCall.from_addr_city = nomcity.ToCharArray();
+                        myCall.from_addr_city = "   ".ToCharArray();
+                    }
+                    else
+                        myCall.from_addr_city = rte.addressNode.community.ToCharArray();
+                    myCall.from_addr_street = rte.addressNode.street.ToUpper().ToCharArray();
+                    myCall.from_addr_number = Convert.ToInt32(rte.addressNode.streetNo);
+                    // time call or immediate call?
+                    List<timesTypeTime> timesList = rte.timesNode;
+                    if (timesList.Count > 0)
+                    {
+                        myCall.due_date = String.Format("{0}", timesList[0].time1.ToString("ddMMyy")).ToCharArray();
+                        myCall.due_time = String.Format("{0}", timesList[0].time1.ToString("HHmm")).ToCharArray();
+                    }
+
+                    myCall.gpsx = rte.addressNode.geographicLocation.@long.ToString().ToCharArray();
+                    myCall.gpsy = rte.addressNode.geographicLocation.lat.ToString().ToCharArray();
+                }
+                else if (rte.nodeType == nodeNodeType.destination)
+                {
+                    if (rte.addressNode.community.Length < 3)
+                        myCall.to_addr_city = "   ".ToCharArray();
+                    else
+                        myCall.to_addr_city = rte.addressNode.community.ToCharArray();
+                    myCall.to_addr_street = rte.addressNode.street.ToUpper().ToCharArray();
+                    myCall.to_addr_number = Convert.ToInt32(rte.addressNode.streetNo);
+                }
+            }
+            if (totalCount > 0)
+                myCall.to_addr_street = ("1/" + totalCount.ToString()).ToCharArray();
+
+            // Send to PI handler
+            // Then acknowledge receipt
+            try
+            {
+                myPISocket = new PI_Lib.PIClient();
+                log.InfoFormat("<-- Successful PI socket connection");
+            }
+            catch (System.Net.Sockets.SocketException ex)
+            {
+                log.InfoFormat("Error on PI socket ({0})", ex.Message);
+                return;
+            }
+            myPISocket.SetType(MessageTypes.PI_DISPATCH_CALL);
+            myPISocket.sendBuf = myCall.ToByteArray();
+
+            try
+            {
+                log.InfoFormat("<-- Starting PI Socket SEND");
+                //System.Threading.Thread.Sleep(30000);
+                myPISocket.SendMessage();
+                log.InfoFormat("<-- Done with PI Socket SEND");
+                log.InfoFormat("<-- Starting PI Socket RECV");
+                myPISocket.ReceiveMessage();
+                log.InfoFormat("<-- Done with PI Socket RECV");
+
+                myCall.Deserialize(myPISocket.recvBuf);
+                myPISocket.CloseMe();
+                log.InfoFormat("<-- success send PI socket");
+            }
+            catch (Exception exc)
+            {
+                log.InfoFormat("<--- error on PI socket send " + exc.Message);
+                return;
+            }
+
+            myOrderKELA.LoadKelaOrderDB(smsg, theMsg, theMsg.idMsg.id, myCall.call_number);
+            myOrderKELA.CallNbr = myCall.call_number.ToString();
+            lock (Global.lockObject)
+            {
+
+                SUTI_svc.order od = ((SUTI_svc.order)theMsg.Item);
+                OrderMonitor om = new OrderMonitor(smsg, myOrderKELA.CallNbr, od.idOrder.id);
+                om.due_date_time = myOrderKELA._UnixTime;
+                //log.InfoFormat("OrderMonitor created: {0} - {1}", myOrderKELA.CallNbr, myCall.call_number);
+                Global.CallHashTable.Add(om, myOrderKELA.CallNbr);
+            }
+
+            log.InfoFormat("*** Call {0} ***", myOrderKELA.CallNbr);
         }
 
 		#region Web Form Designer generated code
