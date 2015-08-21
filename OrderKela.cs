@@ -106,8 +106,8 @@ namespace SUTI_svc
             {
                 connIfx.Open();
 
-                // delete all prior nodes
-                OdbcCommand myCommand = new OdbcCommand("delete from kela_node where tpak_id=" + tpakCallNbr, connIfx);
+                // increment version number in all prior nodes
+                OdbcCommand myCommand = new OdbcCommand("update kela_node set version=(version+1) where tpak_id=" + tpakCallNbr, connIfx);
                 myCommand.ExecuteNonQuery();
                 
                 SUTI_svc.order theOrder = ((SUTI_svc.order)msgFrom.Item);
@@ -189,7 +189,7 @@ namespace SUTI_svc
                         {
                             ct.CommandType = CommandType.Text;
 
-                            ct.CommandText = String.Format(new System.Globalization.CultureInfo("en-US"), "insert into kela_node values ('{0}',{1},{2},'{3}','{4}', {5}, '{6}', '{7}', '{8}', '{9}', '{10}', {11}, {12},'{13}','{14}','{15}','{16}','{17}','{18}')",
+                            ct.CommandText = String.Format(new System.Globalization.CultureInfo("en-US"), "insert into kela_node values ('{0}',{1},{2},'{3}','{4}', {5}, '{6}', '{7}', '{8}', '{9}', '{10}', {11}, {12},'{13}','{14}','{15}','{16}','{17}','{18}',{19})",
                                 theOrder.idOrder.id,
                                 nodeSeqno,
                                 tpakCallNbr,
@@ -206,7 +206,7 @@ namespace SUTI_svc
                                 "",
                                 "",
                                 "",
-                                short_booking_id, booking_id, manual_text
+                                short_booking_id, booking_id, manual_text, 0
                                 );
 
                             log.InfoFormat(ct.CommandText);
@@ -340,7 +340,7 @@ namespace SUTI_svc
                             {
                                 ct.CommandType = CommandType.Text;
 
-                                ct.CommandText = String.Format(new System.Globalization.CultureInfo("en-US"), "insert into kela_node values ('{0}',{1},{2},'{3}','{4}', {5}, '{6}', '{7}', '{8}', '{9}', '{10}', {11}, {12},'{13}','{14}','{15}','{16}','{17}','{18}')",
+                                ct.CommandText = String.Format(new System.Globalization.CultureInfo("en-US"), "insert into kela_node values ('{0}',{1},{2},'{3}','{4}', {5}, '{6}', '{7}', '{8}', '{9}', '{10}', {11}, {12},'{13}','{14}','{15}','{16}','{17}','{18}',{19})",
                                     theOrder.idOrder.id,
                                     nodeSeqno,
                                     tpakCallNbr,
@@ -357,7 +357,7 @@ namespace SUTI_svc
                                     "",
                                     "",
                                     "",
-                                    short_booking_id, booking_id, manual_text
+                                    short_booking_id, booking_id, manual_text, 0
                                     );
 
                                 log.InfoFormat(ct.CommandText);
